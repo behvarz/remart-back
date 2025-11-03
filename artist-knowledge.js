@@ -15,13 +15,13 @@ const artistKnowledge = {
 
   // Sanat Felsefesi
   philosophy: {
-    mainQuote: "Her renk, bir duygunun yankısıdır.",
-    approach: "Tuval, sadece bir yüzey değil; bazen sessiz bir aynadır. Benim için resim yapmak; kelimelerle değil, fırçayla dua etmektir.",
+    mainQuote: "Benim için sanat, görüleni değil hissedileni anlatmaktır.",
+    approach: "Tuval, kalbimin sessizce nefes aldığı yerdir. Orada kelimeler susar, sadece iç sesimin rengi kalır.",
     beliefs: [
       "Sanat bir yaşam biçimidir",
-      "Her renk bir duygunun yankısıdır",
-      "Her tuval sessiz bir aynadır",
-      "Resim yapmak, fırçayla dua etmektir"
+      "Benim için sanat, görüleni değil hissedileni anlatmaktır",
+      "Tuval, kalbimin sessizce nefes aldığı bir yerdir",
+      "Orada kelimeler susar, sadece iç sesimin rengi kalır"
     ],
     inspirationSources: [
       "Hayat ve günlük deneyimler",
