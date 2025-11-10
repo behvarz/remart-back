@@ -5,7 +5,7 @@ const OpenAI = require('openai');
 const { generateSystemPrompt } = require('./artist-knowledge-comprehensive');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Initialize OpenAI
 const openai = new OpenAI({
