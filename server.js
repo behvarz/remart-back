@@ -14,28 +14,30 @@ const openai = new OpenAI({
 
 // Middleware - Multiple frontend URLs support
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:3000',
+  process.env.FRONTEND_URL,             // örn: https://remart.tr
+  process.env.CORS_ORIGIN,              // ek domain tanımı
+  'https://remart.tr',
+  'https://www.remart.tr',
   'https://remart-front.vercel.app',
-  /https:\/\/.*\.vercel\.app$/, // Vercel preview URLs
+  /https:\/\/.*\.vercel\.app$/,         // tüm Vercel preview URL’leri
   'http://localhost:3000'
-];
+].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin is in allowed list or matches pattern
+    if (!origin) return callback(null, true); // Postman, mobil vs.
     const isAllowed = allowedOrigins.some(allowed => {
       if (typeof allowed === 'string') return allowed === origin;
       if (allowed instanceof RegExp) return allowed.test(origin);
       return false;
     });
-    
-    callback(null, isAllowed);
+    if (isAllowed) return callback(null, true);
+    console.warn('❌ CORS blocked:', origin);
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
   },
   credentials: true
 }));
+
 app.use(express.json());
 
 // Store conversation histories (in production, use Redis or database)
@@ -59,8 +61,9 @@ app.get('/api/debug', (req, res) => {
       NODE_ENV: process.env.NODE_ENV,
       PORT: process.env.PORT,
       FRONTEND_URL: process.env.FRONTEND_URL,
+      CORS_ORIGIN: process.env.CORS_ORIGIN,
       HAS_OPENAI_KEY: !!process.env.OPENAI_API_KEY,
-      ALLOWED_ORIGINS: allowedOrigins.map(origin => 
+      ALLOWED_ORIGINS: allowedOrigins.map(origin =>
         origin instanceof RegExp ? origin.toString() : origin
       )
     },
@@ -88,8 +91,7 @@ app.post('/api/chat', async (req, res) => {
       conversationHistory = conversationHistories.get(sessionId);
     } else {
       let systemPrompt = generateSystemPrompt();
-      
-      // Add artwork context if provided
+
       if (artworkContext) {
         systemPrompt += `\n\nÖNEMLİ: Şu anda "${artworkContext.name}" eseri hakkında konuşuyoruz. Bu eserle ilgili sorular geldiğinde, eserin detaylarını kullanarak cevap ver. Eser bilgileri:
 - Eser Adı: ${artworkContext.name}
@@ -99,22 +101,16 @@ app.post('/api/chat', async (req, res) => {
 - Hikaye: ${artworkContext.story}
 - Özel Özellikler: ${artworkContext.specialFeatures}`;
       }
-      
+
       conversationHistory = [
-        {
-          role: 'system',
-          content: systemPrompt
-        }
+        { role: 'system', content: systemPrompt }
       ];
     }
 
-    // Add user message to history
-    conversationHistory.push({
-      role: 'user',
-      content: message
-    });
+    // Add user message
+    conversationHistory.push({ role: 'user', content: message });
 
-    // Call OpenAI API
+    // OpenAI API call
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: conversationHistory,
@@ -126,86 +122,64 @@ app.post('/api/chat', async (req, res) => {
 
     const botMessage = completion.choices[0].message.content;
 
-    // Add bot response to history
-    conversationHistory.push({
-      role: 'assistant',
-      content: botMessage
-    });
+    // Add assistant response
+    conversationHistory.push({ role: 'assistant', content: botMessage });
 
-    // Keep conversation history limited (last 20 messages + system)
+    // Limit stored history (system + last 20)
     if (conversationHistory.length > 21) {
       conversationHistory = [
-        conversationHistory[0], // Keep system message
+        conversationHistory[0],
         ...conversationHistory.slice(-20)
       ];
     }
 
-    // Store updated history
     const newSessionId = sessionId || generateSessionId();
     conversationHistories.set(newSessionId, conversationHistory);
-
-    // Clean up old sessions (older than 1 hour)
     cleanupOldSessions();
 
-    res.json({
-      message: botMessage,
-      sessionId: newSessionId
-    });
+    res.json({ message: botMessage, sessionId: newSessionId });
 
   } catch (error) {
     console.error('OpenAI API Error:', error);
-    
+
     if (error.code === 'insufficient_quota') {
-      return res.status(429).json({ 
-        error: 'API quota exceeded. Please check your OpenAI account.' 
-      });
+      return res.status(429).json({ error: 'API quota exceeded.' });
     }
-    
     if (error.status === 401) {
-      return res.status(401).json({ 
-        error: 'Invalid API key. Please check your configuration.' 
-      });
+      return res.status(401).json({ error: 'Invalid OpenAI API key.' });
     }
 
-    res.status(500).json({ 
-      error: 'An error occurred while processing your request.' 
-    });
+    res.status(500).json({ error: 'An error occurred while processing your request.' });
   }
 });
 
 // Clear conversation history endpoint
 app.post('/api/chat/clear', (req, res) => {
   const { sessionId } = req.body;
-  
   if (sessionId && conversationHistories.has(sessionId)) {
     conversationHistories.delete(sessionId);
   }
-  
   res.json({ message: 'Conversation cleared' });
 });
 
 // Cleanup old sessions
 function cleanupOldSessions() {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
-  
-  for (const [sessionId, _] of conversationHistories) {
+  for (const [sessionId] of conversationHistories) {
     const timestamp = parseInt(sessionId.split('_')[1]);
     if (timestamp < oneHourAgo) {
       conversationHistories.delete(sessionId);
     }
   }
 }
-
-// Cleanup old sessions every 30 minutes
 setInterval(cleanupOldSessions, 30 * 60 * 1000);
 
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Remart AI Chatbot API running on port ${PORT}`);
-  console.log(`📍 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
-  console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Configured' : '❌ Missing!'}`);
+  console.log(`🌍 Allowed Origins:`, allowedOrigins);
+  console.log(`📍 FRONTEND_URL: ${process.env.FRONTEND_URL}`);
+  console.log(`✅ OpenAI Key: ${process.env.OPENAI_API_KEY ? 'Loaded' : 'Missing'}`);
 });
 
 module.exports = app;
-
-
